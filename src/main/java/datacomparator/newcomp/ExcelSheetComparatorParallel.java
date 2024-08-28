@@ -104,20 +104,25 @@ public class ExcelSheetComparatorParallel {
             Row newRow = sheet.createRow(rowIndex++);
             String[] cells = row.split("\\|");
 
+            // Calculate the total number of columns
+            int totalColumns = prodSheet.getRow(0).getPhysicalNumberOfCells();
+
             // Copy data cells with formatting from PROD sheet
-            for (int i = 0; i < cells.length - 1; i++) { // Exclude last element, which is the sheet name
+            for (int i = 0; i < totalColumns; i++) {
                 Cell prodCell = prodSheet.getRow(1).getCell(i); // Reference cell from PROD sheet (row 1)
                 Cell newCell = newRow.createCell(i);
 
                 // Set cell value with the corresponding type
-                newCell.setCellValue(cells[i]);
+                if (i < cells.length - 1) { // Ensure we do not go out of bounds
+                    newCell.setCellValue(cells[i]);
+                }
                 if (prodCell != null) {
                     copyCellStyle(prodCell, newCell);
                 }
             }
 
             // Set "Source Sheet" at the last column
-            newRow.createCell(cells.length - 1).setCellValue(cells[cells.length - 1]);
+            newRow.createCell(totalColumns).setCellValue(cells[cells.length - 1]);
         }
     }
 
