@@ -34,13 +34,13 @@ public class ExcelSheetComparatorParallel {
             Set<String> diffData = sitData.stream()
                     .parallel()
                     .filter(row -> !prodData.contains(row))
-                    .map(row -> row + "|SIT")  // Append the sheet name
+                    .map(row -> row + "|SIT")  // Append the sheet name at the end
                     .collect(Collectors.toSet());
 
             diffData.addAll(prodData.stream()
                     .parallel()
                     .filter(row -> !sitData.contains(row))
-                    .map(row -> row + "|PROD")  // Append the sheet name
+                    .map(row -> row + "|PROD")  // Append the sheet name at the end
                     .collect(Collectors.toSet()));
 
             // Write differences to the sheet with source information
