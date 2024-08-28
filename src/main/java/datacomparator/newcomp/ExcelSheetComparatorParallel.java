@@ -44,7 +44,7 @@ public class ExcelSheetComparatorParallel {
                     .collect(Collectors.toSet()));
 
             // Write differences to the sheet with source information
-            writeDifferencesToSheet(differencesSheet, diffData);
+            writeDifferencesToSheet(differencesSheet, diffData, prodSheet);
 
             try (FileOutputStream fos = new FileOutputStream(filePath)) {
                 workbook.write(fos);
@@ -68,14 +68,10 @@ public class ExcelSheetComparatorParallel {
         Sheet differencesSheet = workbook.createSheet("Differences");
         workbook.setSheetOrder("Differences", index);
 
-        // Copy header from "PROD" sheet
+        // Copy header from "PROD" sheet with formatting
         Row headerRow = prodSheet.getRow(0);
         Row newHeaderRow = differencesSheet.createRow(0);
-        for (int i = 0; i < headerRow.getPhysicalNumberOfCells(); i++) {
-            Cell oldCell = headerRow.getCell(i);
-            Cell newCell = newHeaderRow.createCell(i);
-            newCell.setCellValue(oldCell.toString());
-        }
+        copyRowWithFormatting(headerRow, newHeaderRow);
 
         // Add "Source Sheet" column header at the end
         newHeaderRow.createCell(headerRow.getPhysicalNumberOfCells()).setCellValue("Source Sheet");
@@ -102,16 +98,44 @@ public class ExcelSheetComparatorParallel {
         return dataMap.values().stream().collect(Collectors.toSet());
     }
 
-    private static void writeDifferencesToSheet(Sheet sheet, Set<String> diffData) {
+    private static void writeDifferencesToSheet(Sheet sheet, Set<String> diffData, Sheet prodSheet) {
         int rowIndex = 1; // Start from the second row, since the first row is the header
         for (String row : diffData) {
             Row newRow = sheet.createRow(rowIndex++);
             String[] cells = row.split("\\|");
 
-            // Write data cells
-            for (int i = 0; i < cells.length; i++) {
-                newRow.createCell(i).setCellValue(cells[i]);
+            // Copy data cells with formatting from PROD sheet
+            for (int i = 0; i < cells.length - 1; i++) { // Exclude last element, which is the sheet name
+                Cell prodCell = prodSheet.getRow(1).getCell(i); // Reference cell from PROD sheet (row 1)
+                Cell newCell = newRow.createCell(i);
+
+                // Set cell value with the corresponding type
+                newCell.setCellValue(cells[i]);
+                if (prodCell != null) {
+                    copyCellStyle(prodCell, newCell);
+                }
+            }
+
+            // Set "Source Sheet" at the last column
+            newRow.createCell(cells.length - 1).setCellValue(cells[cells.length - 1]);
+        }
+    }
+
+    private static void copyRowWithFormatting(Row sourceRow, Row targetRow) {
+        for (int i = 0; i < sourceRow.getPhysicalNumberOfCells(); i++) {
+            Cell oldCell = sourceRow.getCell(i);
+            Cell newCell = targetRow.createCell(i);
+            if (oldCell != null) {
+                newCell.setCellValue(oldCell.toString());
+                copyCellStyle(oldCell, newCell);
             }
         }
+    }
+
+    private static void copyCellStyle(Cell sourceCell, Cell targetCell) {
+        Workbook workbook = sourceCell.getSheet().getWorkbook();
+        CellStyle newCellStyle = workbook.createCellStyle();
+        newCellStyle.cloneStyleFrom(sourceCell.getCellStyle());
+        targetCell.setCellStyle(newCellStyle);
     }
 }
