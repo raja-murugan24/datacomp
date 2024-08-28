@@ -23,24 +23,24 @@ public class ExcelSheetComparatorParallel {
             Sheet prodSheet = workbook.getSheet("PROD");
             Sheet differencesSheet = workbook.createSheet("Differences");
 
-            // Explicitly declare Set<String> types
+            // Extract data from both sheets
             Set<String> sitData = extractSheetDataParallel(sitSheet);
             Set<String> prodData = extractSheetDataParallel(prodSheet);
 
-            // Calculate differences between SIT and PROD
+            // Calculate differences between SIT and PROD, adding the source name
             Set<String> diffData = sitData.stream()
                     .parallel()
                     .filter(row -> !prodData.contains(row))
-                    .map(String.class::cast)  // Ensure the type is String
+                    .map(row -> "SIT|" + row)  // Prepend the sheet name
                     .collect(Collectors.toSet());
 
-            // Calculate differences between PROD and SIT and add to diffData
             diffData.addAll(prodData.stream()
                     .parallel()
                     .filter(row -> !sitData.contains(row))
-                    .map(String.class::cast)  // Ensure the type is String
+                    .map(row -> "PROD|" + row)  // Prepend the sheet name
                     .collect(Collectors.toSet()));
 
+            // Write differences to the sheet with source information
             writeDifferencesToSheet(differencesSheet, diffData);
 
             try (FileOutputStream fos = new FileOutputStream(filePath)) {
@@ -70,7 +70,6 @@ public class ExcelSheetComparatorParallel {
             dataMap.put(i, rowData.toString());
         });
 
-        // Ensure the returned set is of type Set<String>
         return dataMap.values().stream().collect(Collectors.toSet());
     }
 
@@ -79,7 +78,12 @@ public class ExcelSheetComparatorParallel {
         for (String row : diffData) {
             Row newRow = sheet.createRow(rowIndex++);
             String[] cells = row.split("\\|");
-            for (int i = 0; i < cells.length; i++) {
+
+            // First cell for sheet name
+            newRow.createCell(0).setCellValue(cells[0]);  // Sheet name
+
+            // Remaining cells for data
+            for (int i = 1; i < cells.length; i++) {
                 newRow.createCell(i).setCellValue(cells[i]);
             }
         }
