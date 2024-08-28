@@ -112,12 +112,9 @@ public class ExcelSheetComparatorParallel {
                 Cell prodCell = prodSheet.getRow(1).getCell(i); // Reference cell from PROD sheet (row 1)
                 Cell newCell = newRow.createCell(i);
 
-                // Set cell value with the corresponding type
+                // Preserve cell format
                 if (i < cells.length - 1) { // Ensure we do not go out of bounds
-                    newCell.setCellValue(cells[i]);
-                }
-                if (prodCell != null) {
-                    copyCellStyle(prodCell, newCell);
+                    setCellValueAndFormat(prodCell, newCell, cells[i]);
                 }
             }
 
@@ -134,6 +131,37 @@ public class ExcelSheetComparatorParallel {
                 newCell.setCellValue(oldCell.toString());
                 copyCellStyle(oldCell, newCell);
             }
+        }
+    }
+
+    private static void setCellValueAndFormat(Cell sourceCell, Cell targetCell, String value) {
+        if (sourceCell == null) return;
+
+        Workbook workbook = sourceCell.getSheet().getWorkbook();
+        CellStyle newCellStyle = workbook.createCellStyle();
+        newCellStyle.cloneStyleFrom(sourceCell.getCellStyle());
+        targetCell.setCellStyle(newCellStyle);
+
+        switch (sourceCell.getCellType()) {
+            case STRING:
+                targetCell.setCellValue(value);
+                break;
+            case NUMERIC:
+                if (DateUtil.isCellDateFormatted(sourceCell)) {
+                    targetCell.setCellValue(Double.parseDouble(value));
+                } else {
+                    targetCell.setCellValue(Double.parseDouble(value));
+                }
+                break;
+            case BOOLEAN:
+                targetCell.setCellValue(Boolean.parseBoolean(value));
+                break;
+            case FORMULA:
+                targetCell.setCellFormula(sourceCell.getCellFormula());
+                break;
+            default:
+                targetCell.setCellValue(value);
+                break;
         }
     }
 
