@@ -1,174 +1,67 @@
-package datacomparator.newcomp;
-
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
+import java.util.HashMap;
+import java.util.Map;
 
-public class ExcelSheetComparatorParallel {
+public class ExcelExceptionUpdaterOptimized {
 
     public static void main(String[] args) {
-        String filePath = "your-excel-file-path.xlsx"; // Update with your file path
-        try (FileInputStream fis = new FileInputStream(filePath);
-             Workbook workbook = new XSSFWorkbook(fis)) {
+        String filePath = "path/to/your/excel/file.xlsx"; // Update with your Excel file path
+        
+        try (FileInputStream fileInputStream = new FileInputStream(filePath);
+             Workbook workbook = new XSSFWorkbook(fileInputStream)) {
 
-            Sheet sitSheet = workbook.getSheet("SIT");
-            Sheet prodSheet = workbook.getSheet("PROD");
+            // Read the "Differences_Data" sheet
+            Sheet differencesSheet = workbook.getSheet("Differences_Data");
+            // Read the "Exception" sheet
+            Sheet exceptionSheet = workbook.getSheet("Exception");
 
-            // Create the Differences sheet as the 3rd sheet, delete if already exists
-            int differencesSheetIndex = 2; // 0-based index
-            Sheet differencesSheet = createDifferencesSheet(workbook, differencesSheetIndex, prodSheet);
-
-            // Extract data from both sheets
-            Set<String> sitData = extractSheetDataParallel(sitSheet);
-            Set<String> prodData = extractSheetDataParallel(prodSheet);
-
-            // Calculate differences between SIT and PROD, adding the source name at the end
-            Set<String> diffData = sitData.stream()
-                    .parallel()
-                    .filter(row -> !prodData.contains(row))
-                    .map(row -> row + "|SIT")  // Append the sheet name at the end
-                    .collect(Collectors.toSet());
-
-            diffData.addAll(prodData.stream()
-                    .parallel()
-                    .filter(row -> !sitData.contains(row))
-                    .map(row -> row + "|PROD")  // Append the sheet name at the end
-                    .collect(Collectors.toSet()));
-
-            // Write differences to the sheet with source information
-            writeDifferencesToSheet(differencesSheet, diffData, prodSheet);
-
-            try (FileOutputStream fos = new FileOutputStream(filePath)) {
-                workbook.write(fos);
+            // Store Employee_IDs from "Exception" sheet in a Map for fast lookup
+            Map<String, Boolean> exceptionEmployeeIds = new HashMap<>();
+            for (int i = 1; i <= exceptionSheet.getLastRowNum(); i++) { // Start from 1 to skip header
+                Row row = exceptionSheet.getRow(i);
+                if (row != null) {
+                    Cell cell = row.getCell(0); // Employee_ID column
+                    if (cell != null) {
+                        exceptionEmployeeIds.put(cell.getStringCellValue(), true);
+                    }
+                }
             }
 
-            System.out.println("Differences written to the 'Differences' sheet.");
+            // Buffer for collecting rows that need updating
+            boolean needsUpdate = false;
+
+            // Iterate through the "Differences_Data" sheet and update the note if Employee_ID is in exception list
+            for (int i = 1; i <= differencesSheet.getLastRowNum(); i++) { // Start from 1 to skip header
+                Row row = differencesSheet.getRow(i);
+                if (row != null) {
+                    Cell employeeIdCell = row.getCell(0); // Employee_ID column in Differences_Data sheet
+                    if (employeeIdCell != null && exceptionEmployeeIds.containsKey(employeeIdCell.getStringCellValue())) {
+                        // Add the note in the last column
+                        int lastColumnIndex = row.getLastCellNum();
+                        Cell noteCell = row.createCell(lastColumnIndex);
+                        noteCell.setCellValue("This Employee is Exception. Ignore him");
+                        needsUpdate = true;
+                    }
+                }
+            }
+
+            // Write the changes to the Excel file only if there is an update needed
+            if (needsUpdate) {
+                try (FileOutputStream fileOutputStream = new FileOutputStream(filePath)) {
+                    workbook.write(fileOutputStream);
+                }
+                System.out.println("Excel file updated successfully!");
+            } else {
+                System.out.println("No updates were needed.");
+            }
 
         } catch (IOException e) {
             e.printStackTrace();
         }
-    }
-
-    private static Sheet createDifferencesSheet(Workbook workbook, int index, Sheet prodSheet) {
-        // Remove the "Differences" sheet if it already exists
-        int sheetIndex = workbook.getSheetIndex("Differences");
-        if (sheetIndex != -1) {
-            workbook.removeSheetAt(sheetIndex);
-        }
-
-        // Create new "Differences" sheet at the specified index
-        Sheet differencesSheet = workbook.createSheet("Differences");
-        workbook.setSheetOrder("Differences", index);
-
-        // Copy header from "PROD" sheet with formatting
-        Row headerRow = prodSheet.getRow(0);
-        Row newHeaderRow = differencesSheet.createRow(0);
-        copyRowWithFormatting(headerRow, newHeaderRow);
-
-        // Add "Source Sheet" column header at the end
-        newHeaderRow.createCell(headerRow.getPhysicalNumberOfCells()).setCellValue("Source Sheet");
-
-        return differencesSheet;
-    }
-
-    private static Set<String> extractSheetDataParallel(Sheet sheet) {
-        int rowCount = sheet.getPhysicalNumberOfRows();
-        int columnCount = sheet.getRow(0).getPhysicalNumberOfCells();
-
-        ConcurrentMap<Integer, String> dataMap = new ConcurrentHashMap<>();
-
-        IntStream.range(1, rowCount).parallel().forEach(i -> {
-            StringBuilder rowData = new StringBuilder();
-            Row row = sheet.getRow(i);
-            for (int j = 0; j < columnCount; j++) {
-                Cell cell = row.getCell(j);
-                rowData.append(cell.toString()).append("|");
-            }
-            dataMap.put(i, rowData.toString());
-        });
-
-        return dataMap.values().stream().collect(Collectors.toSet());
-    }
-
-    private static void writeDifferencesToSheet(Sheet sheet, Set<String> diffData, Sheet prodSheet) {
-        int rowIndex = 1; // Start from the second row, since the first row is the header
-        for (String row : diffData) {
-            Row newRow = sheet.createRow(rowIndex++);
-            String[] cells = row.split("\\|");
-
-            // Calculate the total number of columns
-            int totalColumns = prodSheet.getRow(0).getPhysicalNumberOfCells();
-
-            // Copy data cells with formatting from PROD sheet
-            for (int i = 0; i < totalColumns; i++) {
-                Cell prodCell = prodSheet.getRow(1).getCell(i); // Reference cell from PROD sheet (row 1)
-                Cell newCell = newRow.createCell(i);
-
-                // Preserve cell format
-                if (i < cells.length - 1) { // Ensure we do not go out of bounds
-                    setCellValueAndFormat(prodCell, newCell, cells[i]);
-                }
-            }
-
-            // Set "Source Sheet" at the last column
-            newRow.createCell(totalColumns).setCellValue(cells[cells.length - 1]);
-        }
-    }
-
-    private static void copyRowWithFormatting(Row sourceRow, Row targetRow) {
-        for (int i = 0; i < sourceRow.getPhysicalNumberOfCells(); i++) {
-            Cell oldCell = sourceRow.getCell(i);
-            Cell newCell = targetRow.createCell(i);
-            if (oldCell != null) {
-                newCell.setCellValue(oldCell.toString());
-                copyCellStyle(oldCell, newCell);
-            }
-        }
-    }
-
-    private static void setCellValueAndFormat(Cell sourceCell, Cell targetCell, String value) {
-        if (sourceCell == null) return;
-
-        Workbook workbook = sourceCell.getSheet().getWorkbook();
-        CellStyle newCellStyle = workbook.createCellStyle();
-        newCellStyle.cloneStyleFrom(sourceCell.getCellStyle());
-        targetCell.setCellStyle(newCellStyle);
-
-        switch (sourceCell.getCellType()) {
-            case STRING:
-                targetCell.setCellValue(value);
-                break;
-            case NUMERIC:
-                if (DateUtil.isCellDateFormatted(sourceCell)) {
-                    targetCell.setCellValue(Double.parseDouble(value));
-                } else {
-                    targetCell.setCellValue(Double.parseDouble(value));
-                }
-                break;
-            case BOOLEAN:
-                targetCell.setCellValue(Boolean.parseBoolean(value));
-                break;
-            case FORMULA:
-                targetCell.setCellFormula(sourceCell.getCellFormula());
-                break;
-            default:
-                targetCell.setCellValue(value);
-                break;
-        }
-    }
-
-    private static void copyCellStyle(Cell sourceCell, Cell targetCell) {
-        Workbook workbook = sourceCell.getSheet().getWorkbook();
-        CellStyle newCellStyle = workbook.createCellStyle();
-        newCellStyle.cloneStyleFrom(sourceCell.getCellStyle());
-        targetCell.setCellStyle(newCellStyle);
     }
 }
